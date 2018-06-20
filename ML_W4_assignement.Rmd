@@ -1,0 +1,132 @@
+---
+title: "Practical Machinelearning Week 4"
+date: "15 juni 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Project Goal
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. 
+* You may use any of the other variables to predict with. 
+* You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. 
+* You will also use your prediction model to predict 20 different test cases.
+
+##Approach
+1. load data
+2. clean data
+3. separate in trainset and testset
+4. Train Random Forest
+5. Train Classification Tree
+6. Results
+7. Apply test-set
+
+## Data disclaimer
+The data for this project is publicly available and was sourced from this website: [http://groupware.les.inf.puc-rio.br/har]. 
+
+
+## Load Packages
+```{r,echo=TRUE, message=F, warning=F, results="hide"}
+library(caret)
+library(randomForest)
+library(dplyr)
+library(tidyr)
+library(parallel) 
+library(doParallel)
+library(e1071)
+
+# set seed for reproduceability
+set.seed(1337) #geez! We are so cool today, 1337!
+```
+
+## Load and clean the data
+Time to load our dataset. Today we are only looking for the columns that actually do contain data.
+
+## Load datasets and analyze contents
+```{r,echo=TRUE, message=F, warning=F, results="hide"}
+#Load data, mark NA values as NA
+train <- read.csv("pml-training.csv", na.strings=c("NA","", "#DIV/0!"), row.names=1)
+test <- read.csv("pml-testing.csv", na.strings=c("NA","", "#DIV/0!"), row.names=1)
+
+#removing columns with NA values using a fancy dplyr piping routine..
+test %>% select_if(function(x){!any(is.na(x))}) -> test
+train %>% select_if(function(x){!any(is.na(x))}) -> train
+
+#remove information we do not need because we cannot use it for predictive purposes. These are columns that contain values such as names and timestamp 
+test <- test[,-c(1:6)]
+train <- train[,-c(1:6)]
+
+#Just for me... 
+head(train) 
+dim(train)
+head(test) 
+dim(test)
+```
+
+## Split the data
+By the looks of it the training set contains 53 variables and 19662 observations. The test set contains 53 variables and only 20 observations. Time to split the data in a train and validation set!
+
+```{r,echo=TRUE, message=F, warning=F, results="hide"}
+#We need to split the dataset in a train and valudation set. We could split dataset in 80/20, 90/10 or even 75/25. Today we are not doing that, we are doing 81/19, don't ask. 
+split <- createDataPartition(y=train$classe, p=0.81, list=FALSE)
+train <- train[split,] 
+validate <- train[-split,]
+```
+
+## Train and Predict
+We could use all sorts of methods to train and predict! For example random forests, decisions trees or maybe even a neural network... Today we will be applying Random Forests. We will train our model on the variable #classe.
+
+```{r}
+# Overview of classe variable
+prop.table(table(train$classe))
+```
+
+```{r,echo=TRUE, message=F, warning=F, results="hide"}
+# Lets try a couple of alternatives, first enable parallel computation.. it took me some time to find out how this works but it will pay off in the future! Note to self: do not forget package e1017.
+# Thank you https://charleshsliao.wordpress.com/2017/03/15/parallel-computation-in-r-for-svm-with-mnist-data/
+fun <- makeCluster(detectCores() - 1) #detectCores() - 1
+registerDoParallel(fun)
+
+# Set Control
+control <- trainControl(method = "cv", number = 10, allowParallel = TRUE)
+
+# Lets do a Random Forest
+forest <- caret::train(classe ~ ., method="rf",data=train, trControl=control)
+
+# Classification Tree
+tree <- caret::train(classe ~ ., method="rpart",data=train, trControl=control)
+
+# Clean-up
+stopCluster(fun)
+```
+
+## Random Forest Results / Conclusion
+We proceed with displaying the results of our prediction. We conclude that the Random Forest model has an accuracy of 99,9% (95% CI) which is exceptionally high. 
+
+```{r,echo=TRUE, message=F, warning=F}
+predict.forest <- predict(forest,newdata=validate)
+confusionMatrix(predict.forest, validate$classe)
+```
+
+## Classification Tree Results / Conclusion
+We proceed with displaying the results of our prediction. We conclude that the Classification Tree model has an accuracy of 48,3% (95% CI) which is fairly horrible. We'd better not use this model.
+
+```{r,echo=TRUE, message=F, warning=F}
+predict.tree <- predict(tree,newdata=validate)
+confusionMatrix(predict.tree, validate$classe)
+```
+
+## Prediction on test set
+We proceed with our final task: a prediction based on the small test-set of 20 obervations. We will use our best performing model, the Random Forest model. Given the accuracy of the Random Forest model we expect that atleast 19 out of 20 forecasted values are correct.
+
+```{r}
+result <- predict(forest, newdata = test)
+prop.table(table(result))
+```
+```{r}
+
+```
